@@ -1,0 +1,9 @@
+
+flask>=3.1,<4
+requests>=2.32,<3
+gunicorn>=23,<27
+langchain-huggingface>=1.0,<2
+langchain-community>=0.4,<0.5
+langchain-openai>=1.0,<2
+sentence-transformers>=5,<7
+faiss-cpu>=1.12,<2
