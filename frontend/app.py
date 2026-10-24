@@ -1,210 +1,151 @@
 
-# =========================================================
-# AuroraStay Hotels - Streamlit Frontend
-# =========================================================
-
-import os
 import streamlit as st
 import requests
 
 
-# =========================================================
+# ---------------------------------------------------------
 # Configuration
-# =========================================================
+# ---------------------------------------------------------
 
-BACKEND_URL = os.getenv(
-    "BACKEND_URL",
-    "http://localhost:5000"
-).rstrip("/")
+BACKEND_URL = "http://localhost:7860"
 
 
-# =========================================================
+# ---------------------------------------------------------
 # Page configuration
-# =========================================================
+# ---------------------------------------------------------
 
 st.set_page_config(
-    page_title="AuroraStay Hotels",
+    page_title="Aurora Stays",
     page_icon="🏨",
     layout="wide"
 )
 
 
-# =========================================================
-# Sidebar - Retrieval parameters
-# =========================================================
+# ---------------------------------------------------------
+# Sidebar  -  Model parameters
+# ---------------------------------------------------------
 
 with st.sidebar:
 
-    st.header("⚙️ RAG Parameters")
+    st.header("⚙️ Parameters")
 
     k = st.slider(
-        "Number of chunks (k)",
+        "k (chunks to retrieve)",
         min_value=1,
-        max_value=20,
-        value=3,
-        help="Number of policy chunks retrieved from FAISS."
+        max_value=10,
+        value=4,
+        help="Number of relevant chunks fetched from the vector store."
     )
 
-    st.info(
-        "The baseline evaluation used k=3. "
-        "Higher values may improve coverage but can "
-        "also introduce irrelevant information."
+    temperature = st.slider(
+        "Temperature",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.0,
+        step=0.1,
+        help="Higher values make the output more creative; lower values make it more focused."
     )
 
-    st.caption(
-        "The language model settings are configured "
-        "in the Flask backend."
+    max_tokens = st.slider(
+        "Max tokens",
+        min_value=64,
+        max_value=2048,
+        value=512,
+        step=64,
+        help="Maximum number of tokens in the generated answer."
     )
 
 
-# =========================================================
-# Main application
-# =========================================================
+# ---------------------------------------------------------
+# Main area
+# ---------------------------------------------------------
 
-st.title("🏨 AuroraStay Hotels")
-
-st.write(
-    "Ask questions about AuroraStay hotel policies, "
-    "including reservations, cancellations, refunds, "
-    "parking, pets, check-in times and guest services."
-)
+st.title("🏨 Aurora Stays")
+st.write("Ask a question about Aurora Stays policies.")
 
 
-# =========================================================
-# Response mode
-# =========================================================
+# ---------------------------------------------------------
+# Response type selection (two options only)
+# ---------------------------------------------------------
 
 response_type = st.radio(
-    "Choose response mode",
-    [
-        "Answer only",
-        "Answer + Relevant Chunks"
-    ],
+    "Response mode",
+    ["Answer only", "Answer + Relevant Chunks"],
     horizontal=True
 )
 
 
-# =========================================================
-# Question input
-# =========================================================
+# ---------------------------------------------------------
+# Query input
+# ---------------------------------------------------------
 
 query = st.text_input(
-    "Enter your hotel policy question",
-    placeholder=(
-        "e.g., What are the parking fees and "
-        "check-in times at ASH-ATL Midtown?"
-    )
+    "Your question",
+    placeholder="e.g., What are the parking fees and check-in times at ASH-ATL Midtown?"
 )
 
 
-# =========================================================
-# Submit question
-# =========================================================
+# ---------------------------------------------------------
+# Submit
+# ---------------------------------------------------------
 
 if st.button("Submit", type="primary"):
 
     if not query.strip():
-
-        st.warning("Please enter a hotel policy question.")
+        st.warning("Please enter a question.")
 
     else:
 
-        # Select the correct Flask endpoint
+        # Pick endpoint
         if response_type == "Answer only":
             endpoint = "/v1/answer"
         else:
             endpoint = "/v1/answer_with_relevant_chunks"
 
-        # Build request payload
+        # Build request payload with parameters
         payload = {
-            "query": query.strip(),
-            "k": k
+            "query": query,
+            "k": k,
+            "temperature": temperature,
+            "max_tokens": max_tokens
         }
 
         try:
-
-            with st.spinner("Searching AuroraStay policies..."):
-
+            with st.spinner("Thinking…"):
                 response = requests.post(
                     f"{BACKEND_URL}{endpoint}",
-                    json=payload,
-                    timeout=120
+                    json=payload
                 )
 
-            # Successful API response
             if response.status_code == 200:
 
                 result = response.json()
 
-                st.subheader("Answer")
+                # -- Answer only --------------------------------
+                if response_type == "Answer only":
 
-                st.write(
-                    result.get(
-                        "answer",
-                        "No answer was returned."
-                    )
-                )
+                    st.subheader("Answer")
+                    st.write(result["answer"])
 
-                # Display retrieved chunks when requested
-                if response_type == "Answer + Relevant Chunks":
+                # -- Answer + Relevant Chunks -------------------
+                else:
 
-                    st.subheader("Relevant Policy Chunks")
+                    st.subheader("Answer")
+                    st.write(result["answer"])
 
-                    chunks = result.get(
-                        "relevant_chunks",
-                        []
-                    )
+                    st.subheader("Relevant Chunks")
+                    for i, chunk in enumerate(result["relevant_chunks"], start=1):
+                        with st.expander(f"Chunk {i}"):
+                            st.write(chunk)
 
-                    if chunks:
-
-                        for i, chunk in enumerate(chunks, start=1):
-
-                            with st.expander(f"Chunk {i}"):
-                                st.text(chunk)
-
-                    else:
-
-                        st.info(
-                            "No relevant policy chunks were returned."
-                        )
-
-                st.caption(
-                    "Policy information may require verification "
-                    "against the current property profile or "
-                    "reservation details before being quoted "
-                    "to a guest."
-                )
-
-            # API returned an error
             else:
-
                 st.error(
-                    f"Backend API returned HTTP "
-                    f"{response.status_code}."
+                    f"Unable to get a response from the RAG API. "
+                    f"Status code: {response.status_code}"
                 )
 
-                try:
-                    st.write(response.json())
-                except ValueError:
-                    st.write(response.text[:500])
-
-        except requests.exceptions.Timeout:
-
+        except requests.exceptions.RequestException:
             st.error(
-                "The request timed out. "
-                "Please try again."
-            )
-
-        except requests.exceptions.ConnectionError:
-
-            st.error(
-                "Unable to connect to the AuroraStay "
-                "Flask backend. Please check that "
-                "the backend service is running."
-            )
-
-        except requests.exceptions.RequestException as error:
-
-            st.error(
-                f"An API request error occurred: {error}"
+                "Unable to connect to the RAG API. "
+                "Please make sure the backend service is running."
             )
